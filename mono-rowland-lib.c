@@ -4,7 +4,10 @@
  * Pure-C geometry and math utilities for the Monochromator_Rowland McStas
  * component.  See mono-rowland-lib.h for the public interface.
  ******************************************************************************/
+#ifndef MONO_ROWLAND_LIB_H
+// header include guarded for source inclusion via McCode %include
 #include "mono-rowland-lib.h"
+#endif 
 
 double mono_rowland_gauss(double x, double mean, double rms) {
     double d = (x) - (mean);
