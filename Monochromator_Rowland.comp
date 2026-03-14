@@ -464,7 +464,7 @@ INITIALIZE
     tiltH[h] *= tiltH_scale;
   }
   
-  if (0 < 1){
+  if (properties.flag & 1){
     printf("Rowland sphere centered at (%f, %f, %f) ", center_xz[0], 0., center_xz[1]);
     printf("with Slabs located at [x y z] / mm:\n");
     printf("[");

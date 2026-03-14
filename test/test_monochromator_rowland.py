@@ -149,6 +149,7 @@ def _build_standard_instrument(name: str = 'MonoRowlandTest',
         'source': '"Origin"',
         'sink': '"Focus"',
         'focush': f'"{focush}"',
+        'verbose': 1,
     }
     if extra_comp_params:
         params.update(extra_comp_params)
@@ -497,6 +498,7 @@ def test_exact_focusing_is_optimal():
         text = res['output'].decode(errors='replace')
         m = re.search(r'FocusDetector_I=\s*([\d.eE+\-]+)', text)
         assert m, f"FocusDetector_I not found in output for scale={scale}:\n{text}"
+        print(f"scale={scale}: FocusDetector_I = {m.group(1)}\n{text}")
         return float(m.group(1))
 
     counts = {s: focused_intensity(s) for s in _SCALES}
