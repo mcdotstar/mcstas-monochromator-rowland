@@ -26,7 +26,7 @@ jobs:
         run: python -m pip install --upgrade pip GitPython
 
       - name: Generate registry file
-        run: python .github/register.py --ext ".comp" --ext ".instr" --output "pooch-registry.txt"
+        run: python .github/register.py --ext ".comp" --ext ".instr" --ext ".h" --ext ".c" --output "pooch-registry.txt"
 
       - name: Commit the updated file to the repository
         uses: EndBug/add-and-commit@v9

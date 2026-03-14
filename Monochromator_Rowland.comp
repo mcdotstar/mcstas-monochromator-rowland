@@ -55,6 +55,9 @@
 * r0: [1]                 Maximum reflectivity. O unactivates component
 * Q: [AA-1]               Scattering vector
 * RH: [m]                 radius of horizontal focussing. flat for 0
+* tiltH_scale: [1]        uniform scale factor applied to all per-slab horizontal tilts.
+*                         1 (default) = nominal focusing; 0 = flat; 2 = double tilt.
+*                         Use as a scan parameter to find the optimal tilt experimentally.
 *
 * optional parameters
 * DM: [AA]                monochromator d-spacing instead of Q=2*pi/DM
@@ -102,8 +105,9 @@ SETTING PARAMETERS (
   order=0,
   angle_h=0,
   angle_v=0,
-  string focush=0, // one of "infinite", "point", or "exact"
+  string focush=0, // one of "parallel", "point", or "exact"
   show_construction=1,
+  tiltH_scale=1.0, // uniform multiplier for per-slab horizontal tilts (1=nominal, 0=flat)
   rotation_angle=0 // set for output
 )
 OUTPUT PARAMETERS ()
@@ -112,11 +116,10 @@ OUTPUT PARAMETERS ()
 SHARE
 %{
 %include "read_table-lib"
+%include "mono-rowland-lib"
 
-#pragma acc routine
-double GAUSS_monorowland(double x, double mean, double rms){
-  return (exp(-((x)-(mean))*((x)-(mean))/(2*(rms)*(rms)))/(sqrt(2*PI)*(rms)));
-}
+/* Convenience alias so the rest of this file can keep using the original name. */
+#define GAUSS_monorowland(x, mean, rms) mono_rowland_gauss((x), (mean), (rms))
 
 #pragma acc routine
 Coords relative_xz(Coords o, Rotation r, Coords t){
@@ -128,80 +131,7 @@ Coords relative_xz(Coords o, Rotation r, Coords t){
   return rot_apply(r, coords_sub(t, o));
 }
 
-#pragma acc routine
-double circle_xz(double x0, double z0, double x1, double z1, double* c){
-  /* Find the center and radius of the circle passing through the points
-      (x0, z0), (0, 0), and (x1, z1)
-     Stores the center as `c[0], c[1]`
-     Returns the radius or -1 if the points are colinear
-  */
-  // By enforcing that one point is the origin, we can simplify the general algorithm
-  // The points *must* be colinear, *and* we have a division problem:
-  if ((x0 == 0 && x1 == 0) || (z0 == 0 && z1 ==0)) return -1.;
-  double m0, m1;
-  m0 = x0 ? z0/x0 : 0;
-  m1 = x1 ? z1/x1 : 0;
-  c[0] = z0 ? x0/z0 : x0 ? 1 : 0; // if x0!=0 && z0==0 make sure m0 != p0
-  c[1] = z1 ? x1/z1 : x1 ? 1 : 0;
-  // equal slopes -> colinear {check the perpendicular slope in case of zeros}
-  if (m0 == m1 && c[0] == c[1]) return -1.;
-  // by picking the large absolute slope we avoid division by zero
-  // (hopefully also produces a more-stable result?)
-  if (abs(m0) > abs(m1)){
-    c[0] = (m0 * m1 * (z0 - z1) + m1 * x0 - m0 * x1) / (2 * (m1 - m0));
-    c[1] = (0.5 * x0 - c[0]) / m0 + 0.5 * z0;
-  } else {
-    c[0] = (m1 * m0 * (z1 - z0) + m0 * x1 - m1 * x0) / (2 * (m0 - m1));
-    c[1] = (0.5 * x1 - c[0]) / m1 + 0.5 * z1;
-  }
-  // calculate and return the radius
-  return sqrt((c[0] - x0) * (c[0] - x0) + (c[1] - z0) * (c[1] - z0));
-}
-
-#pragma acc routine
-void coverage_limit_point(int which, double x, double z, double rangle, double* center, double radius, double* point){
-  double vl = sqrt(x*x + z*z);
-  double v[2] = {x/vl, z/vl};
-  double xi[2] = {center[0] - x, center[1] - z};
-  double n[2] = {v[1], v[0]};
-  // there are two choices for the direction perpendicular to v:
-  n[which > 0] *= -1.0;
-  // the direction from (x, z) to the maximum viewing point
-  double s[2];
-  for (int i=0; i<2; ++i) s[i] = n[i]*sin(rangle) - v[i]*cos(rangle);
-  // since both (x,z) and point are on the circle, this all simplifies!
-  point[0] = x + s[0] * 2*(s[0] * xi[0] + s[1] * xi[1]);
-  point[1] = z + s[1] * 2*(s[0] * xi[0] + s[1] * xi[1]);
-}
-
-#pragma acc routine
-double exact_rowland_focus_angle(double ax, double az, double bx, double bz, double* point){
-  double n0[2] = {ax + bx, az + bz};
-  double np[2] = {ax + bx - 2*point[0], az + bz - 2*point[2]};
-  double l0 = sqrt(n0[0]*n0[0] + n0[1]*n0[1]);
-  double lp = sqrt(np[0]*np[0] + np[1]*np[1]);
-  n0[0] /= l0;
-  n0[1] /= l0;
-  np[0] /= lp;
-  np[1] /= lp;
-  double cphi = n0[0]*np[0] + n0[1]*np[1];
-  double phi = acos(fabs(cphi) < 1 ? cphi : cphi/fabs(cphi));
-  printf("a (%f, %f), b (%f, %f), p (%f, %f) -> phi %f\n", ax, az, bx, bz, point[0], point[2], phi);
-  double cab = -(ax * bz - az * bx);
-  double cnn = -(n0[0] * np[1] - n0[1] * np[0]);
-  return (cab * cnn < 0) ? -phi : phi;
-}
-
-struct crystal_properties {
-  int flag; // (verbose) & (rTableFlag << 1) & (tTableFlag << 2)
-  double tau; // mono_Q
-  int n; // order
-  double r; // r0
-  double t; // t0
-  double rms_y; // mos_rms_y;
-  double rms_z; // mos_rms_z;
-  double rms; // mos_rms_max;
-};
+/* struct crystal_properties is declared in mono-rowland-lib.h */
 #pragma acc routine
 int crystal_interaction(_class_particle* neutron, struct crystal_properties* prop, t_Table* rTable, t_Table* tTable){
   const double Gauss_X[] = {-0.987992518020485, -0.937273392400706, -0.848206583410427, -0.724417731360170,
@@ -398,7 +328,7 @@ INITIALIZE
   coords_get(src, &source_x, &source_y, &source_z);
   coords_get(snk, &sink_x, &sink_y, &sink_z);
   
-  radius = circle_xz(source_x, source_z, sink_x, sink_z, center_xz);
+  radius = mono_rowland_circle_xz(source_x, source_z, sink_x, sink_z, center_xz);
   if (radius < 0){
     fprintf(stderr,
       "Monochromator_Rowland: %s: Virtual source (%f, %f) and sink (%f, %f) are colinear with the monochromator\n",
@@ -413,8 +343,8 @@ INITIALIZE
   }
 
   double point0[2], point1[2];
-  coverage_limit_point(0, source_x, source_z, DEG2RAD * 0.5 * angle_h, center_xz, radius, point0);
-  coverage_limit_point(1, source_x, source_z, DEG2RAD * 0.5 * angle_h, center_xz, radius, point1);
+  mono_rowland_coverage_limit_point(0, source_x, source_z, DEG2RAD * 0.5 * angle_h, center_xz, radius, point0);
+  mono_rowland_coverage_limit_point(1, source_x, source_z, DEG2RAD * 0.5 * angle_h, center_xz, radius, point1);
 
   if ((properties.flag & 1) && properties.r)
   {
@@ -528,12 +458,13 @@ INITIALIZE
   // Go through and calculate the crystal tilts
   for (int h=0; h<NH; ++h){
     int slab = h;
-    //tiltH[h] = focush_type==3 ? exact_rowland_focus_angle(th_list[h], radius, source_x, source_z, sink_x, sink_z) : (RH) ? asin(position[3*h+2]/RH) : 0.;
-    //tiltH[h] = focush_type==3 ? exact_rowland_focus_angle(source_x, source_z, sink_x, sink_z, position+3*h) : (RH) ? asin(position[3*h+2]/RH) : 0.;
-    tiltH[h] = focush_type==3 ? (th_list[h] - om) / 2.0 : (RH) ? asin(position[3*h+2]/RH) : 0.;
+    //tiltH[h] = focush_type==3 ? mono_rowland_exact_focus_angle(th_list[h], radius, source_x, source_z, sink_x, sink_z) : (RH) ? asin(position[3*h+2]/RH) : 0.;
+    //tiltH[h] = focush_type==3 ? mono_rowland_exact_focus_angle(source_x, source_z, sink_x, sink_z, position+3*h) : (RH) ? asin(position[3*h+2]/RH) : 0.;
+    tiltH[h] = focush_type==3 ? (th_list[h] - om) / 2.0 : (RH) ? -asin(position[3*h+2]/RH) : 0.;
+    tiltH[h] *= tiltH_scale;
   }
   
-  if (0 < 1){
+  if (properties.flag & 1){
     printf("Rowland sphere centered at (%f, %f, %f) ", center_xz[0], 0., center_xz[1]);
     printf("with Slabs located at [x y z] / mm:\n");
     printf("[");
@@ -665,8 +596,8 @@ MCDISPLAY
 %{
 if (show_construction){
   double point0[2], point1[2];
-  coverage_limit_point(0, rowland[3], rowland[4], DEG2RAD * 0.5 * angle_h, rowland, rowland[2], point0);
-  coverage_limit_point(1, rowland[3], rowland[4], DEG2RAD * 0.5 * angle_h, rowland, rowland[2], point1);
+  mono_rowland_coverage_limit_point(0, rowland[3], rowland[4], DEG2RAD * 0.5 * angle_h, rowland, rowland[2], point0);
+  mono_rowland_coverage_limit_point(1, rowland[3], rowland[4], DEG2RAD * 0.5 * angle_h, rowland, rowland[2], point1);
 
   double zero=0;
   dashed_line(rowland[3], zero, rowland[4], point0[0], zero, point0[1], 100);

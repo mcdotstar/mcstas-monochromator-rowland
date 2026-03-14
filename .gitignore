@@ -1,2 +1,6 @@
 test_Monochromator_Rowland.*
 test_Monochromator_Rowland*/
+build/
+*__pycache__/
+*.comp.json
+*.ipynb_checkpoints/
