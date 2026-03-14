@@ -60,6 +60,27 @@ _TRIVIAL_SOURCE_COMP = dedent("""\
     END
 """)
 
+# A divergent source that fans neutrons horizontally over ±dh_deg degrees.
+# The rand01()-based divergence ensures different slabs are illuminated;
+# each neutron index gets a reproducible RNG state via the McStas 3 PRNG so
+# results with a fixed seed are deterministic.
+_DIVERGENT_SOURCE_COMP = dedent("""\
+    DEFINE COMPONENT DivergentSource
+    SETTING PARAMETERS (double velocity=2200.0, double dh_deg=5.0)
+    TRACE
+    %{
+      double angle = (2.0*rand01() - 1.0) * DEG2RAD * dh_deg;
+      x = 0; y = 0; z = 0;
+      vx = velocity * sin(angle);
+      vy = 0;
+      vz = velocity * cos(angle);
+      t = 0.0;
+      p = 1.0;
+      SCATTER;
+    %}
+    END
+""")
+
 # ---------------------------------------------------------------------------
 # Test instrument geometry constants
 # ---------------------------------------------------------------------------
@@ -83,6 +104,7 @@ def _make_registries():
     from mccode_antlr.reader.registry import InMemoryRegistry
     src_reg = InMemoryRegistry('trivial_src')
     src_reg.add_comp('TrivialSource', _TRIVIAL_SOURCE_COMP)
+    src_reg.add_comp('DivergentSource', _DIVERGENT_SOURCE_COMP)
     return [src_reg, repo_registry()]
 
 
@@ -401,3 +423,96 @@ def test_focus_modes_all_run(focush):
     if focush in ('parallel', 'point'):
         assert 'Calculated horizontal focus radius' in text, (
             f"focush='{focush}': Expected focus-radius log line.\n{text}")
+
+
+@compiled
+def test_exact_focusing_is_optimal():
+    """tiltH_scale=1 (nominal focush="exact") gives the best horizontal focus.
+
+    A DivergentSource fans neutrons at ±5° horizontally, illuminating all 7
+    slabs (which span ~10 cm at 1 m).  With focush="exact" and tiltH_scale=1
+    the Rowland inscribed-angle formula tilts each slab so all beams converge
+    to the Focus point (1 m along the reflected-beam arm).  With tiltH_scale=0
+    (flat) the 7 beams fan out ~93 mm at 1 m, so only ~5% land in a 5 mm
+    detector.  With tiltH_scale=2 (over-focused) the beams converge before the
+    detector and then diverge again.
+
+    We use a deliberately narrow detector (5 mm wide) at Focus so that focused
+    intensity >> unfocused intensity, verifying:
+        intensity(scale=1)  >  intensity(scale=0)   (focusing improves over flat)
+        intensity(scale=1)  >  intensity(scale=2)   (scale=1 is better than over-focus)
+    """
+    from mccode_antlr import Flavor
+    from mccode_antlr.assembler import Assembler
+
+    # Half-divergence large enough to illuminate all 7 slabs at 1 m distance
+    # (slabs span ~10 cm → ±5° covers ±87 mm at 1 m).
+    _DH_DEG = 5.0
+
+    _SCALES = [0.0, 1.0, 2.0]
+
+    def build(scale: float) -> object:
+        name = f'MonoRowlandTiltScale_{str(scale).replace(".", "p")}'
+        params = {
+            'NH': 7,
+            'zwidth': 0.01,
+            'yheight': 0.15,
+            'mosaic': 60.0,
+            'DM': _DM,
+            'gap': 0.002,
+            'source': '"Origin"',
+            'sink': '"Focus"',
+            'focush': '"exact"',
+            'tiltH_scale': scale,
+            'verbose': 0,
+        }
+        asm = Assembler(name, registries=_make_registries(), flavor=Flavor.MCSTAS)
+        asm.component('Origin', 'DivergentSource',
+                      at=([0, 0, 0], 'ABSOLUTE'),
+                      parameters={'velocity': _V_BRAGG, 'dh_deg': _DH_DEG})
+        asm.component('AnalyzerPoint', 'Arm',
+                      at=([0, 0, 1], 'Origin'))
+        asm.component('Analyzer', 'Monochromator_Rowland',
+                      at=([0, 0, 0], 'AnalyzerPoint'),
+                      rotate=([0, -_THETA_B_DEG, 0], 'AnalyzerPoint'),
+                      parameters=params)
+        asm.component('DetectorArm', 'Arm',
+                      at=([0, 0, 0], 'Analyzer'),
+                      rotate=([0, -_TWO_THETA_DEG, 0], 'AnalyzerPoint'))
+        asm.component('Focus', 'Arm',
+                      at=([0, 0, 1], 'DetectorArm'))
+        # Narrow detector (5 mm wide) at focus.  With exact focusing all 7
+        # slabs converge to ~0 mm; with flat the spread is ~93 mm, so only
+        # ~5% of scattered neutrons land in the 5 mm window.
+        asm.component('FocusDetector', 'PSD_monitor',
+                      at=([0, 0, 0], 'Focus'),
+                      parameters={'nx': 20, 'ny': 1,
+                                  'filename': f'"psd_{scale}.dat"',
+                                  'restore_neutron': 1,
+                                  'yheight': 0.3, 'xwidth': 0.005})
+        return asm.instrument
+
+    def focused_intensity(scale: float) -> float:
+        res = compile_and_run(build(scale), ncount=5000, seed=42)
+        text = res['output'].decode(errors='replace')
+        m = re.search(r'FocusDetector_I=\s*([\d.eE+\-]+)', text)
+        assert m, f"FocusDetector_I not found in output for scale={scale}:\n{text}"
+        return float(m.group(1))
+
+    counts = {s: focused_intensity(s) for s in _SCALES}
+
+    nominal = counts[1.0]
+    flat    = counts[0.0]
+    over    = counts[2.0]
+
+    assert nominal > 0, (
+        f"scale=1 (exact Rowland) gave zero intensity at the focus detector. "
+        f"All counts: {counts}")
+    assert nominal > flat, (
+        f"scale=1 ({nominal:.3g}) should be > scale=0/flat ({flat:.3g}) — "
+        f"exact focusing must concentrate the beam into the 5 mm window. "
+        f"All counts: {counts}")
+    assert nominal > over, (
+        f"scale=1 ({nominal:.3g}) should be > scale=2/over-focused ({over:.3g}) — "
+        f"over-focus converges before the detector. "
+        f"All counts: {counts}")

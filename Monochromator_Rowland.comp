@@ -55,6 +55,9 @@
 * r0: [1]                 Maximum reflectivity. O unactivates component
 * Q: [AA-1]               Scattering vector
 * RH: [m]                 radius of horizontal focussing. flat for 0
+* tiltH_scale: [1]        uniform scale factor applied to all per-slab horizontal tilts.
+*                         1 (default) = nominal focusing; 0 = flat; 2 = double tilt.
+*                         Use as a scan parameter to find the optimal tilt experimentally.
 *
 * optional parameters
 * DM: [AA]                monochromator d-spacing instead of Q=2*pi/DM
@@ -102,8 +105,9 @@ SETTING PARAMETERS (
   order=0,
   angle_h=0,
   angle_v=0,
-  string focush=0, // one of "infinite", "point", or "exact"
+  string focush=0, // one of "parallel", "point", or "exact"
   show_construction=1,
+  tiltH_scale=1.0, // uniform multiplier for per-slab horizontal tilts (1=nominal, 0=flat)
   rotation_angle=0 // set for output
 )
 OUTPUT PARAMETERS ()
@@ -126,14 +130,6 @@ Coords relative_xz(Coords o, Rotation r, Coords t){
   coords_get(t, &tx, &ty, &tz);
   return rot_apply(r, coords_sub(t, o));
 }
-
-/* Aliases so that the INITIALIZE/TRACE code below can keep the original names
-   without any further modifications. */
-#define circle_xz(x0, z0, x1, z1, c)  mono_rowland_circle_xz((x0), (z0), (x1), (z1), (c))
-#define coverage_limit_point(w, x, z, a, ctr, r, pt) \
-    mono_rowland_coverage_limit_point((w), (x), (z), (a), (ctr), (r), (pt))
-#define exact_rowland_focus_angle(ax, az, bx, bz, pt) \
-    mono_rowland_exact_focus_angle((ax), (az), (bx), (bz), (pt))
 
 /* struct crystal_properties is declared in mono-rowland-lib.h */
 #pragma acc routine
@@ -332,7 +328,7 @@ INITIALIZE
   coords_get(src, &source_x, &source_y, &source_z);
   coords_get(snk, &sink_x, &sink_y, &sink_z);
   
-  radius = circle_xz(source_x, source_z, sink_x, sink_z, center_xz);
+  radius = mono_rowland_circle_xz(source_x, source_z, sink_x, sink_z, center_xz);
   if (radius < 0){
     fprintf(stderr,
       "Monochromator_Rowland: %s: Virtual source (%f, %f) and sink (%f, %f) are colinear with the monochromator\n",
@@ -347,8 +343,8 @@ INITIALIZE
   }
 
   double point0[2], point1[2];
-  coverage_limit_point(0, source_x, source_z, DEG2RAD * 0.5 * angle_h, center_xz, radius, point0);
-  coverage_limit_point(1, source_x, source_z, DEG2RAD * 0.5 * angle_h, center_xz, radius, point1);
+  mono_rowland_coverage_limit_point(0, source_x, source_z, DEG2RAD * 0.5 * angle_h, center_xz, radius, point0);
+  mono_rowland_coverage_limit_point(1, source_x, source_z, DEG2RAD * 0.5 * angle_h, center_xz, radius, point1);
 
   if ((properties.flag & 1) && properties.r)
   {
@@ -462,9 +458,10 @@ INITIALIZE
   // Go through and calculate the crystal tilts
   for (int h=0; h<NH; ++h){
     int slab = h;
-    //tiltH[h] = focush_type==3 ? exact_rowland_focus_angle(th_list[h], radius, source_x, source_z, sink_x, sink_z) : (RH) ? asin(position[3*h+2]/RH) : 0.;
-    //tiltH[h] = focush_type==3 ? exact_rowland_focus_angle(source_x, source_z, sink_x, sink_z, position+3*h) : (RH) ? asin(position[3*h+2]/RH) : 0.;
-    tiltH[h] = focush_type==3 ? (th_list[h] - om) / 2.0 : (RH) ? asin(position[3*h+2]/RH) : 0.;
+    //tiltH[h] = focush_type==3 ? mono_rowland_exact_focus_angle(th_list[h], radius, source_x, source_z, sink_x, sink_z) : (RH) ? asin(position[3*h+2]/RH) : 0.;
+    //tiltH[h] = focush_type==3 ? mono_rowland_exact_focus_angle(source_x, source_z, sink_x, sink_z, position+3*h) : (RH) ? asin(position[3*h+2]/RH) : 0.;
+    tiltH[h] = focush_type==3 ? (th_list[h] - om) / 2.0 : (RH) ? -asin(position[3*h+2]/RH) : 0.;
+    tiltH[h] *= tiltH_scale;
   }
   
   if (0 < 1){
@@ -599,8 +596,8 @@ MCDISPLAY
 %{
 if (show_construction){
   double point0[2], point1[2];
-  coverage_limit_point(0, rowland[3], rowland[4], DEG2RAD * 0.5 * angle_h, rowland, rowland[2], point0);
-  coverage_limit_point(1, rowland[3], rowland[4], DEG2RAD * 0.5 * angle_h, rowland, rowland[2], point1);
+  mono_rowland_coverage_limit_point(0, rowland[3], rowland[4], DEG2RAD * 0.5 * angle_h, rowland, rowland[2], point0);
+  mono_rowland_coverage_limit_point(1, rowland[3], rowland[4], DEG2RAD * 0.5 * angle_h, rowland, rowland[2], point1);
 
   double zero=0;
   dashed_line(rowland[3], zero, rowland[4], point0[0], zero, point0[1], 100);
