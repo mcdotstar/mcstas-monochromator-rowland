@@ -29,7 +29,7 @@ double mono_rowland_circle_xz(double x0, double z0, double x1, double z1, double
 
 /* Compute one of the two points on the Rowland circle at angular distance
    *rangle* (radians) from the point (x, z) as seen from *center*.
-   *which*  0 → "left" limit point, non-zero → "right" limit point.
+   *which*  0 -> "left" limit point, non-zero -> "right" limit point.
    Result stored in point[0] (x) and point[1] (z). */
 void mono_rowland_coverage_limit_point(int which, double x, double z,
                                        double rangle, double *center,
@@ -38,7 +38,7 @@ void mono_rowland_coverage_limit_point(int which, double x, double z,
 /* Compute the tilt angle (radians) that a crystal slab at position *point*
    (xz-pair) must have so that it focuses neutrons from (ax, az) toward
    (bx, bz) using the exact Rowland-circle reflection condition.
-   Returns a signed angle; positive → tilt toward the source side. */
+   Returns a signed angle; positive -> tilt toward the source side. */
 double mono_rowland_exact_focus_angle(double ax, double az,
                                       double bx, double bz,
                                       double *point);
@@ -47,7 +47,7 @@ double mono_rowland_exact_focus_angle(double ax, double az,
    SHARE block of Monochromator_Rowland.comp). */
 struct crystal_properties {
     int    flag;  /* bitfield: bit0=verbose, bit1=rTableFlag, bit2=tTableFlag */
-    double tau;   /* scattering vector magnitude (Å⁻¹) */
+    double tau;   /* scattering vector magnitude (AA^-1) */
     int    n;     /* diffraction order (0 = auto) */
     double r;     /* maximum reflectivity r0 */
     double t;     /* transmission efficiency t0 */

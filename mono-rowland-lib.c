@@ -21,10 +21,10 @@ double mono_rowland_circle_xz(double x0, double z0, double x1, double z1,
 
        A point (cx, cz) is equidistant from (0,0) and (x0, z0) iff it lies
        on the perpendicular bisector:
-           x0·cx + z0·cz = (x0² + z0²)/2
+           x0*cx + z0*cz = (x0^2 + z0^2)/2
        Likewise for (x1, z1):
-           x1·cx + z1·cz = (x1² + z1²)/2
-       Solve the resulting 2×2 linear system. */
+           x1*cx + z1*cz = (x1^2 + z1^2)/2
+       Solve the resulting 2x2 linear system. */
 
     double det = x0 * z1 - z0 * x1;
     if (det == 0.0)
@@ -62,7 +62,7 @@ void mono_rowland_coverage_limit_point(int which, double x, double z,
 double mono_rowland_exact_focus_angle(double ax, double az,
                                       double bx, double bz,
                                       double *point) {
-    /* Normal to the bisector of source→slab and sink→slab vectors, evaluated
+    /* Normal to the bisector of source->slab and sink->slab vectors, evaluated
        with and without the slab point.  The angle between the two normals is
        the required crystal tilt. */
     double n0[2] = {ax + bx,                  az + bz};
