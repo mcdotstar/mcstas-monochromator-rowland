@@ -72,8 +72,8 @@ def compile_and_run(instr, ncount: int, parameters: dict | None = None,
     from mccode_antlr.run import McStas
     sim = McStas(instr)
     compile_time, _ = _timed_compile(sim, directory=None if use_temp_dir else Path('.'))
-    run_time, (output, results) = _timed_run(sim, parameters or {}, ncount=ncount, seed=seed)
-    return {'compile': compile_time, 'run': run_time, 'output': output, 'data': results}
+    run_time, returned = _timed_run(sim, parameters or {}, ncount=ncount, seed=seed)
+    return {'compile': compile_time, 'run': run_time, 'output': returned}
 
 
 def compile_and_scan(instr, parameters: dict, ncount: int, seed: int = 1,

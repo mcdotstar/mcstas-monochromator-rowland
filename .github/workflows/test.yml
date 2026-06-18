@@ -30,7 +30,7 @@ jobs:
 
       - name: Setup MSVC compilers (Windows only)
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: egor-tensin/vs-shell@v2
 
       - name: Install Python dependencies
         run: pip install -r requirements.txt
