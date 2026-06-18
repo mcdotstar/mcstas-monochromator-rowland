@@ -219,7 +219,7 @@ def test_component_compiles():
     """
     instr = _build_standard_instrument('MonoRowlandCompile')
     results = compile_and_run(instr, ncount=10, seed=1)
-    text = results['output'].decode(errors='replace')
+    text = results['output'].stdout
     assert 'Rowland sphere centered at' in text, (
         f"Expected 'Rowland sphere centered at' in output:\n{text}")
 
@@ -234,7 +234,7 @@ def test_rowland_circle_self_consistency():
     """
     instr = _build_standard_instrument('MonoRowlandGeometry', nH=7)
     results = compile_and_run(instr, ncount=1, seed=1)
-    text = results['output'].decode(errors='replace')
+    text = results['output'].stdout
 
     # Extract circle center: "Rowland sphere centered at (cx, 0, cz)"
     m = re.search(r'Rowland sphere centered at \(\s*([-\d.eE+]+),\s*[-\d.eE+]+,\s*([-\d.eE+]+)\)',
@@ -320,7 +320,7 @@ def test_zero_reflectivity_suppresses_scatter():
         sentinel='zero_r0_start',
     )
     results = compile_and_run(asm.instrument, ncount=1000, seed=42)
-    text = results['output'].decode(errors='replace')
+    text = results['output'].stdout
     assert 'zero_r0_start' in text, f"Sentinel missing:\n{text}"
 
     m = re.search(r'scatter_count=(\d+)', text)
@@ -347,7 +347,7 @@ def test_bragg_scattering_occurs():
         sentinel='bragg_start',
     )
     results = compile_and_run(asm.instrument, ncount=10000, seed=1)
-    text = results['output'].decode(errors='replace')
+    text = results['output'].stdout
     assert 'bragg_start' in text, f"Sentinel missing:\n{text}"
 
     m = re.search(r'scatter_count=(\d+)', text)
@@ -385,7 +385,7 @@ def test_dm_and_q_equivalent():
 
     def get_scatter_count(instr) -> int:
         res = compile_and_run(instr, ncount=1000, seed=7)
-        text = res['output'].decode(errors='replace')
+        text = res['output'].stdout
         m = re.search(r'scatter_count=(\d+)', text)
         assert m, f"scatter_count sentinel not found:\n{text}"
         return int(m.group(1))
@@ -416,7 +416,7 @@ def test_focus_modes_all_run(focush):
                                        focush=focush,
                                        extra_comp_params={'verbose': 1})
     results = compile_and_run(instr, ncount=10, seed=1)
-    text = results['output'].decode(errors='replace')
+    text = results['output'].stdout
 
     assert 'Rowland sphere centered at' in text, (
         f"focush='{focush}': 'Rowland sphere centered at' missing.\n{text}")
@@ -495,7 +495,7 @@ def test_exact_focusing_is_optimal():
 
     def focused_intensity(scale: float) -> float:
         res = compile_and_run(build(scale), ncount=5000, seed=42)
-        text = res['output'].decode(errors='replace')
+        text = res['output'].stdout
         m = re.search(r'FocusDetector_I=\s*([\d.eE+\-]+)', text)
         assert m, f"FocusDetector_I not found in output for scale={scale}:\n{text}"
         print(f"scale={scale}: FocusDetector_I = {m.group(1)}\n{text}")
