@@ -32,6 +32,9 @@ test_dm_and_q_equivalent
 test_focus_modes_all_run
     All four focush modes ("", "parallel", "point", "exact") compile and run
     without error.
+
+test_mcdisplay_draws_slabs_as_trace_reflects
+    Each slab MCDISPLAY draws has the centre and the surface normal TRACE uses.
 """
 from __future__ import annotations
 
@@ -518,3 +521,54 @@ def test_exact_focusing_is_optimal():
         f"scale=1 ({nominal:.3g}) should be > scale=2/over-focused ({over:.3g}) — "
         f"over-focus converges before the detector. "
         f"All counts: {counts}")
+
+
+@compiled
+def test_mcdisplay_draws_slabs_as_trace_reflects():
+    """Each drawn slab sits where TRACE puts it and faces the way TRACE reflects from it.
+
+    TRACE takes a neutron into a slab's frame with ``rot_apply(focus, r - p)`` and
+    reflects from the plane x = 0 there, so the slab's surface normal in the
+    component's frame is the first row of ``focus``: (cos t, 0, -sin t) for a tilt t
+    about y. MCDISPLAY must draw that surface, not the one turned by -t.
+    """
+    from mccode_antlr.run import McStas
+    instr = _build_standard_instrument('MonoRowlandDisplay', focush='exact', nH=7,
+                                       extra_comp_params={'show_construction': 0})
+    sim = McStas(instr)
+    sim.compile(trace=True)
+    text = sim.run({}, ncount=1, seed=1, trace=True).stdout
+
+    tilts = re.search(r'Slabs tilted \(horizontal\) degreees:([-\d., ]+)', text)
+    assert tilts, f"Could not find the slab tilts in output:\n{text}"
+    tilts = [math.radians(float(t)) for t in tilts.group(1).split(',') if t.strip()]
+    assert any(abs(t) > 0.01 for t in tilts), 'exact focusing should tilt the outer slabs'
+    table = re.search(r'Slabs located at \[x y z\] / mm:\s*\n(.*?)\n', text)
+    assert table, f"Could not find the slab positions in output:\n{text}"
+    centres = [[float(v) / 1000 for v in pos.split()]
+               for pos in re.findall(r'\[\s*([-\d. ]+)\s*\]', table.group(1))]
+
+    # the Analyzer's drawing, in its own frame: one closed outline (5 points) per slab
+    drawing = re.split(r'MCDISPLAY: component Analyzer\s*\n', text, maxsplit=1)[1]
+    drawing = drawing.split('MCDISPLAY: component', 1)[0]
+    outlines = [[float(v) for v in m.split(',')]
+                for m in re.findall(r'MCDISPLAY: multiline\(5,([^)]*)\)', drawing)]
+    assert len(outlines) == len(tilts) == len(centres) == 7
+
+    def sub(u, v):
+        return [a - b for a, b in zip(u, v)]
+
+    def cross(u, v):
+        return [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]]
+
+    for slab, (points, tilt, centre) in enumerate(zip(outlines, tilts, centres)):
+        corners = [points[3 * k:3 * k + 3] for k in range(4)]
+        drawn_centre = [sum(c[i] for c in corners) / 4 for i in range(3)]
+        assert all(abs(a - b) < 1e-5 for a, b in zip(drawn_centre, centre)), slab
+        normal = cross(sub(corners[1], corners[0]), sub(corners[3], corners[0]))
+        length = math.sqrt(sum(n * n for n in normal))
+        reflecting = [math.cos(tilt), 0.0, -math.sin(tilt)]
+        alignment = abs(sum(n / length * r for n, r in zip(normal, reflecting)))
+        assert alignment == pytest.approx(1.0, abs=1e-9), (
+            f"slab {slab} is drawn {math.degrees(math.acos(min(alignment, 1.0))):.3f} degrees "
+            f"from the surface TRACE reflects from")

@@ -628,11 +628,14 @@ if (show_construction){
     // z
     v[2] = v[11] = -slab_width[0]/2; // az = dz
     v[5] = v[8] = slab_width[0]/2; // bz = cz
-    // Rotate the points by the crystal focussing angles
-    Rotation focus;
+    // Turn the points as the slab is turned. TRACE takes a neutron into the slab's frame
+    // with `focus` and reflects there, so the slab itself is turned by its transpose --
+    // drawing with `focus` showed every slab tilted the wrong way.
+    Rotation focus, defocus;
     rot_set_rotation(focus, 0., tiltH[j], 0.);
+    rot_transpose(focus, defocus);
     for (int k=0; k<12; k+=3){
-      coords_get(rot_apply(focus, coords_set(v[k],v[k+1],v[k+2])),v+k,v+k+1,v+k+2);
+      coords_get(rot_apply(defocus, coords_set(v[k],v[k+1],v[k+2])),v+k,v+k+1,v+k+2);
     }
     // Move the rotated cystal into the correct position
     int o = 3*j;
