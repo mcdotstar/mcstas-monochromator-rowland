@@ -5,8 +5,7 @@
  * component.  These functions have no dependency on McStas runtime types and
  * can therefore be compiled and unit-tested independently.
  *
- * Included in Monochromator_Rowland.comp via:
- *   SHARE %{ %include "mono-rowland-lib" %}
+ * Included from the SHARE block of Monochromator_Rowland.comp.
  *
  * For standalone use (e.g. C unit tests), compile mono-rowland-lib.c and
  * include this header.
